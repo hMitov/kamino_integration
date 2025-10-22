@@ -1,0 +1,30 @@
+# Surfpool logs and data
+.surfpool/
+.surfpool/logs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Rust build artifacts
+Cargo.lock
+**/*.pdb
+
+# Anchor specific
+.anchor/
+target/
+**/*.rs.bk
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Generated client files
+clients/
+target/
