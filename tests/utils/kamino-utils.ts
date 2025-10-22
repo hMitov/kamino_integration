@@ -232,31 +232,47 @@ export async function extractAssetFromObligation(
   if (!reserve) return null;
 
   const reserveState = reserve.state;
+  let amtBN;
+  if (amount && typeof amount === 'object' && amount.toString) {
+    console.log('Converting object to string:', amount.toString());
+    const amountStr = amount.toString();
+    if (amountStr.includes('.')) {
+      const integerPart = amountStr.split('.')[0];
+      amtBN = new BN(integerPart);
+    } else {
+      amtBN = new BN(amountStr);
+    }
+  } else {
+    console.error('Invalid amount format:', amount);
+    return null;
+  }
+  
+  if (amtBN.lte(new BN(0))) return null;
 
-  if (amount <= 0) return null;
-
-  // Get the current price from the reserve's price feed
+  // Convert marketPriceSf (2^60-scaled) to priceE8 (1e8-scaled)
   const marketPriceSf = reserveState.liquidity.marketPriceSf;
-  console.log(`Market price SF for ${reserveAddr}:`, marketPriceSf.toString());
-  // Convert from scaled fraction to price_e8 (divide by 2^64, then multiply by 1e8)
-  // Use proper BN division to avoid precision loss
-  const scaleFactor = new BN(2).pow(new BN(64));
+  const scaleFactor = new BN(2).pow(new BN(60));
   const priceE8 = marketPriceSf.mul(new BN(1e8)).div(scaleFactor);
-  console.log(`Calculated priceE8:`, priceE8.toString());
+
+  // Debug print
+  const humanPrice = priceE8.toNumber() / 1e8;
+  console.log(`Reserve ${reserveAddr} → price: $${humanPrice.toFixed(4)}`);
 
   const baseData = {
-    amount: new BN(amount.toFixed(0)),
+    amount: amtBN,
     decimals: reserveState.liquidity.mintDecimals.toNumber(),
-    priceE8: priceE8,
+    priceE8,
   };
 
   if (isCollateral) {
+    const ltv = new BN(reserveState.config.loanToValuePct.toString());
+    const liqThresholdBps = ltv.lte(new BN(100)) ? ltv.muln(100) : ltv;
     return {
       ...baseData,
-      liqThresholdBps: reserveState.config.loanToValuePct,
-      borrowFactorBps: 0, // Default for now
+      liqThresholdBps,
+      borrowFactorBps: new BN(0),
     };
-  } else {
-    return baseData;
   }
+
+  return baseData;
 }
