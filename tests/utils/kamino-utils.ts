@@ -33,7 +33,7 @@ import {
   createSyncNativeInstruction,
   NATIVE_MINT,
 } from "@solana/spl-token";
-import { BlockhashWithHeight, MarketArgs, ReserveArgs } from "./types";
+import { BlockhashWithHeight, MarketArgs, ReserveArgs } from "../types/kamino-types";
 import BN from "bn.js";
 
 const API_KAMINO_SLOTS_DURATION = 'https://api.kamino.finance/slots/duration';
@@ -59,8 +59,6 @@ export async function getMarket({ rpc, marketPubkey }: MarketArgs) {
     console.log(`Slot duration: ${slotDuration}ms`);
 
     console.log(`Loading Kamino market...`);
-    console.log("rpc: ", rpc);
-    console.log(`marketPubkey: ${marketPubkey}`);
     const market = await KaminoMarket.load(rpc, marketPubkey, slotDuration);
 
     if (!market) {
@@ -131,8 +129,6 @@ export async function sendAndConfirmTx(
   console.log("Starting sendAndConfirmTx");
   const blockhash = await fetchBlockhash(rpc);
   console.log("blockhash: ", blockhash);
-  const currentSlot = await rpc.getSlot().send();
-  console.log("blockhash slot:", blockhash.slot, "current slot:", currentSlot);
   const lutsByAddress: AddressesByLookupTableAddress = {};
 
   const tx = await pipe(
@@ -236,16 +232,17 @@ export async function extractAssetFromObligation(
   if (!reserve) return null;
 
   const reserveState = reserve.state;
-  console.log(`${isCollateral ? 'deposit' : 'borrow'}Amount`, amount.toString());
 
   if (amount <= 0) return null;
 
   // Get the current price from the reserve's price feed
   const marketPriceSf = reserveState.liquidity.marketPriceSf;
-  console.log("marketPriceSf", marketPriceSf.toString());
+  console.log(`Market price SF for ${reserveAddr}:`, marketPriceSf.toString());
   // Convert from scaled fraction to price_e8 (divide by 2^64, then multiply by 1e8)
-  const priceE8 = marketPriceSf.div(new BN(2).pow(new BN(64))).mul(new BN(1e8));
-  console.log("priceE8", priceE8.toString());
+  // Use proper BN division to avoid precision loss
+  const scaleFactor = new BN(2).pow(new BN(64));
+  const priceE8 = marketPriceSf.mul(new BN(1e8)).div(scaleFactor);
+  console.log(`Calculated priceE8:`, priceE8.toString());
 
   const baseData = {
     amount: new BN(amount.toFixed(0)),
