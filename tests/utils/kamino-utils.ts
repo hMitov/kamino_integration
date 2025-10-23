@@ -1,5 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Transaction, SystemProgram, Connection } from "@solana/web3.js";
+import { Transaction, SystemProgram, Connection, sendAndConfirmTransaction } from "@solana/web3.js";
 import { KaminoMarket, DEFAULT_RECENT_SLOT_DURATION_MS } from "@kamino-finance/klend-sdk";
 import axios from "axios";
 import {
@@ -31,7 +31,11 @@ import {
 import {
   getOrCreateAssociatedTokenAccount,
   createSyncNativeInstruction,
+  createTransferInstruction,
   NATIVE_MINT,
+  createMintToInstruction,
+  createAssociatedTokenAccountInstruction,
+  transfer,
 } from "@solana/spl-token";
 import { BlockhashWithHeight, MarketArgs, ReserveArgs } from "../types/kamino-types";
 import BN from "bn.js";
@@ -246,7 +250,7 @@ export async function extractAssetFromObligation(
     console.error('Invalid amount format:', amount);
     return null;
   }
-  
+
   if (amtBN.lte(new BN(0))) return null;
 
   // Convert marketPriceSf (2^60-scaled) to priceE8 (1e8-scaled)
@@ -275,4 +279,52 @@ export async function extractAssetFromObligation(
   }
 
   return baseData;
+}
+
+export async function airdropSol(
+  connection: Connection,
+  recipient: anchor.web3.PublicKey,
+  solAmount: number
+) {
+  const airdropSignature = await connection.requestAirdrop(
+    recipient,
+    solAmount * anchor.web3.LAMPORTS_PER_SOL
+  );
+  await connection.confirmTransaction(airdropSignature);
+  console.log(`Funded ${solAmount} SOL to ${recipient.toBase58()}`);
+}
+
+export async function fundLiquidatorWithUsdc(
+  connection,
+  provider,
+  borrowerWallet,
+  liquidatorKeypair,
+  usdcMint,
+  amount
+) {
+  const payer = borrowerWallet.payer;
+  const borrowerUsdcAta = await getOrCreateAssociatedTokenAccount(
+    connection,
+    payer,
+    usdcMint,
+    borrowerWallet.publicKey
+  );
+
+  const liquidatorUsdcAta = await getOrCreateAssociatedTokenAccount(
+    connection,
+    payer,
+    usdcMint,
+    liquidatorKeypair.publicKey
+  );
+
+  await transfer(
+    connection,
+    payer,
+    borrowerUsdcAta.address,
+    liquidatorUsdcAta.address,
+    borrowerWallet.publicKey,
+    amount * 1e6 // amount in USDC (6 decimals)
+  );
+
+  console.log(`✅ Transferred ${amount} USDC to liquidator (${liquidatorUsdcAta.address.toBase58()})`);
 }

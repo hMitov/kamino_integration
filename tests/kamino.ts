@@ -97,6 +97,54 @@ export async function executeKaminoBorrow(
     );
 }
 
+export async function executeKaminoLiquidation(
+    loadedMarket: KaminoMarket,
+    repayAmount: number,
+    minCollateralReceiveAmount: number,
+    usdcReserve: KaminoReserve,
+    solReserve: KaminoReserve,
+    liquidator: any,
+    obligationOwner: any,
+    rpc: any,
+    wsRpc: any
+) {
+    const obligation = await loadedMarket.getUserVanillaObligation(obligationOwner);
+
+    const liquidationAction = await KaminoAction.buildLiquidateTxns(
+        loadedMarket,
+        new BN(repayAmount),                         // how much USDC you repay
+        new BN(minCollateralReceiveAmount),           // min SOL you expect to receive
+        usdcReserve.getLiquidityMint(),       // repayTokenMint
+        solReserve.getLiquidityMint(),        // withdrawTokenMint (collateral)
+        liquidator,                           // liquidator signer
+        obligationOwner,                      // borrower's address
+        obligation,    // obligation type
+        false,                                 // useV2Ixs
+        undefined,                            // scopeRefreshConfig
+        0,                            // extra compute budget
+        true,                                 // include ATA ixs
+        false,                                // requestElevationGroup
+        { skipInitialization: true, skipLutCreation: true },
+        none(),                               // referrer
+        0,                                    // maxAllowedLtvOverridePercent
+        BigInt(0)                              // current slot
+    );
+
+    await sendAndConfirmTx(
+        { rpc, wsRpc },
+        liquidator,
+        [
+            ...liquidationAction.computeBudgetIxs,
+            ...liquidationAction.setupIxs,
+            ...liquidationAction.lendingIxs,
+            ...liquidationAction.cleanupIxs,
+        ],
+        [],
+        [],
+        "liquidation"
+    );
+}
+
 export async function waitForMarketSync() {
     await new Promise((r) => setTimeout(r, 5000));
 }

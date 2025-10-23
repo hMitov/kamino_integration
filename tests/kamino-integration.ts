@@ -1,17 +1,20 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import { BN, Program } from "@coral-xyz/anchor";
 import { KaminoIntegration } from "../target/types/kamino_integration";
 import { expect } from "chai";
 import {
   KaminoMarket,
   KaminoReserve,
+  KaminoAction,
+  getAssociatedTokenAddress,
 } from "@kamino-finance/klend-sdk";
-import { SystemProgram } from "@solana/web3.js";
+import { SystemProgram, Keypair } from "@solana/web3.js";
 import { address } from '@solana/addresses';
 import type { Address } from '@solana/addresses';
-import { createKeyPairSignerFromBytes } from "@solana/kit";
-import { loadReserveData, setUpConnections, wrapSol, extractAssetFromObligation } from './utils/kamino-utils';
-import { createRefreshInstructions, executeKaminoBorrow, executeKaminoDeposit, waitForMarketSync } from "./kamino";
+import { createKeyPairSignerFromBytes, none } from "@solana/kit";
+import { loadReserveData, setUpConnections, wrapSol, extractAssetFromObligation, fundLiquidatorWithUsdc, sendAndConfirmTx, airdropSol } from './utils/kamino-utils';
+import { createRefreshInstructions, executeKaminoBorrow, executeKaminoDeposit, executeKaminoLiquidation, waitForMarketSync } from "./kamino";
+import { getAccount } from "@solana/spl-token";
 
 const MAIN_MARKET_ADDRESS: Address = address("7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF");
 const SOL_MINT_ADDRESS: Address = address("So11111111111111111111111111111111111111112");
@@ -55,7 +58,7 @@ describe("kamino_integration with deposit and withdraw", () => {
     await executeKaminoDeposit(depositAmount, loadedMarket, solReserve, signer, rpc, ws);
     console.log("Successfully deposited 1 SOL!");
 
-    
+
     const { reserve: usdcReserve } = await loadReserveData({
       rpc: rpc,
       marketPubkey: MAIN_MARKET_ADDRESS,
@@ -64,7 +67,7 @@ describe("kamino_integration with deposit and withdraw", () => {
 
     // Refresh reserves before borrowing
     const refreshInstructions = createRefreshInstructions(loadedMarket, [solReserve, usdcReserve]);
-    
+
     console.log("Borrowing 50 USDC...");
     const borrowAmount = 50_000_000;
     await executeKaminoBorrow(borrowAmount, loadedMarket, usdcReserve, signer, rpc, ws, refreshInstructions)
@@ -136,5 +139,43 @@ describe("kamino_integration with deposit and withdraw", () => {
 
     console.log(`On-chain Health Factor (Q64.64): ${hfDecimal.toFixed(4)}x`);
     expect(hfDecimal).to.be.greaterThan(1.0);
+
+    if (hfDecimal < 1.0) {
+      const liquidatorKeypair = Keypair.generate();
+      const liquidatorSigner = await createKeyPairSignerFromBytes(liquidatorKeypair.secretKey);
+
+      // Fund liquidator with SOL for transaction fees
+      await airdropSol(connection, liquidatorKeypair.publicKey, 1);
+      await fundLiquidatorWithUsdc(
+        connection,
+        provider,
+        wallet,
+        liquidatorKeypair,
+        new anchor.web3.PublicKey(USDC_MINT_ADDRESS),
+        10
+      );
+
+      const usdcReserve = loadedMarket.getReserveByMint(USDC_MINT_ADDRESS);
+      const solReserve = loadedMarket.getReserveByMint(SOL_MINT_ADDRESS);
+
+      const repayAmount = 5_000_000;           // 5 USDC
+      const minCollateralReceiveAmount = 50_000_000; // ~0.05 SOL, minimum acceptable receive
+
+      await executeKaminoLiquidation(
+        loadedMarket,
+        repayAmount,
+        minCollateralReceiveAmount,
+        usdcReserve,
+        solReserve,
+        liquidatorSigner,
+        signer.address,
+        rpc,
+        ws
+      );
+
+      console.log("Liquidation executed successfully!");
+    } else {
+      console.log("Health Factor is greater than 1.0, no liquidation needed");
+    }
   });
 });
