@@ -52,6 +52,25 @@ npm install
 anchor build
 ```
 
+### Troubleshooting Dependency Issues
+
+If you encounter borsh version conflicts or edition2024 errors:
+
+```bash
+# Clean cargo cache
+cargo clean
+
+# Update Rust toolchain (if needed)
+rustup update
+
+# Rebuild with pinned dependencies
+anchor build
+```
+
+The project includes pinned dependencies to ensure compatibility:
+- `borsh = "=0.10.3"` - Compatible with Anchor
+- `rust-toolchain.toml` - Specifies Rust version
+
 ### Surfpool Workflow
 #### 1. Start a Surfnet
 ```bash

@@ -10,7 +10,7 @@
 *~
 
 # Rust build artifacts
-Cargo.lock
+# Cargo.lock - Keep this file for reproducible builds
 **/*.pdb
 
 # Anchor specific
