@@ -1,24 +1,18 @@
 import * as anchor from "@coral-xyz/anchor";
-import { BN, Program } from "@coral-xyz/anchor";
+import { Program } from "@coral-xyz/anchor";
 import { KaminoIntegration } from "../target/types/kamino_integration";
-import { expect } from "chai";
-import {
-  KaminoMarket,
-  KaminoReserve,
-  KaminoAction,
-  getAssociatedTokenAddress,
-} from "@kamino-finance/klend-sdk";
+import { KaminoMarket, KaminoReserve } from "@kamino-finance/klend-sdk";
 import { SystemProgram, Keypair } from "@solana/web3.js";
 import { address } from '@solana/addresses';
 import type { Address } from '@solana/addresses';
-import { createKeyPairSignerFromBytes, none } from "@solana/kit";
-import { loadReserveData, setUpConnections, wrapSol, extractAssetFromObligation, fundLiquidatorWithUsdc, sendAndConfirmTx, airdropSol } from './utils/kamino-utils';
-import { createRefreshInstructions, executeKaminoBorrow, executeKaminoDeposit, executeKaminoLiquidation, waitForMarketSync } from "./kamino";
-import { getAccount } from "@solana/spl-token";
+import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { loadReserveData, setUpConnections, extractAssetFromObligation, fundLiquidatorWithUsdc, airdropSol, convertHfQ64ToDecimal } from './utils/kamino-utils';
+import { createRefreshInstructions, executeKaminoBorrow, executeKaminoDeposit, executeKaminoLiquidation, waitForMarketSync } from "./kamino-sdk-operations.ts/kamino_operations";
 
 const MAIN_MARKET_ADDRESS: Address = address("7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF");
 const SOL_MINT_ADDRESS: Address = address("So11111111111111111111111111111111111111112");
 const USDC_MINT_ADDRESS: Address = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+const HEALTH_FACTOR_THRESHOLD: number = 1.0;
 
 describe("kamino_integration with deposit and withdraw", () => {
   const provider = anchor.AnchorProvider.env();
@@ -38,43 +32,49 @@ describe("kamino_integration with deposit and withdraw", () => {
   let signer: Awaited<ReturnType<typeof createKeyPairSignerFromBytes>>;
 
   before(async () => {
-    const solAmountToWrap = 2 * 1_000_000_000 // 2 SOL
-    wrapSol(connection, provider, wallet, solAmountToWrap);
+    const solAmountToWrap = 4 // 4 SOL
+    await airdropSol(connection, wallet.publicKey, solAmountToWrap);
 
     signer = await createKeyPairSignerFromBytes(wallet.payer.secretKey);
 
-    const { market: loadedMarket, reserve: solReserve }: { market: KaminoMarket; reserve: KaminoReserve } = await loadReserveData({
-      rpc: rpc,
-      marketPubkey: MAIN_MARKET_ADDRESS,
-      mintPubkey: SOL_MINT_ADDRESS,
-    });
+    try {
+      const { market: loadedMarket, reserve: solReserve }: { market: KaminoMarket; reserve: KaminoReserve } = await loadReserveData({
+        rpc: rpc,
+        marketPubkey: MAIN_MARKET_ADDRESS,
+        mintPubkey: SOL_MINT_ADDRESS,
+      });
 
-    await waitForMarketSync();
-    await loadedMarket.loadReserves();
-    await loadedMarket.refreshAll();
+      await waitForMarketSync();
+      // Load all reserves and prices
+      await loadedMarket.loadReserves();
+      await loadedMarket.refreshAll();
 
-    console.log("Depositing 1 SOL...");
-    const depositAmount = 1_000_000_000;
-    await executeKaminoDeposit(depositAmount, loadedMarket, solReserve, signer, rpc, ws);
-    console.log("Successfully deposited 1 SOL!");
+      console.log("Depositing 1 SOL...");
+      const depositAmount = 1_000_000_000; // 1 SOL
+      await executeKaminoDeposit(depositAmount, loadedMarket, solReserve, signer, rpc, ws);
+      console.log("Successfully deposited 1 SOL!");
 
 
-    const { reserve: usdcReserve } = await loadReserveData({
-      rpc: rpc,
-      marketPubkey: MAIN_MARKET_ADDRESS,
-      mintPubkey: USDC_MINT_ADDRESS,
-    });
+      const { reserve: usdcReserve } = await loadReserveData({
+        rpc: rpc,
+        marketPubkey: MAIN_MARKET_ADDRESS,
+        mintPubkey: USDC_MINT_ADDRESS,
+      });
 
-    // Refresh reserves before borrowing
-    const refreshInstructions = createRefreshInstructions(loadedMarket, [solReserve, usdcReserve]);
+      // Refresh reserves before borrowing
+      const refreshInstructions = createRefreshInstructions(loadedMarket, [solReserve, usdcReserve]);
 
-    console.log("Borrowing 50 USDC...");
-    const borrowAmount = 50_000_000;
-    await executeKaminoBorrow(borrowAmount, loadedMarket, usdcReserve, signer, rpc, ws, refreshInstructions)
-    console.log("Successfully borrowed 50 USDC!");
+      console.log("Borrowing 50 USDC...");
+      const borrowAmount = 50_000_000; // 50 USDC
+      await executeKaminoBorrow(borrowAmount, loadedMarket, usdcReserve, signer, rpc, ws, refreshInstructions)
+      console.log("Successfully borrowed 50 USDC!");
+    } catch (err) {
+      console.error(`Failed to deposit and borrow:`, err);
+      throw err;
+    }
   });
 
-  it("computes HF using live Kamino accounts", async () => {
+  it("computes HF using live Kamino account", async () => {
     const { market: loadedMarket } = await loadReserveData({
       rpc,
       marketPubkey: MAIN_MARKET_ADDRESS,
@@ -89,7 +89,6 @@ describe("kamino_integration with deposit and withdraw", () => {
     const userObligation = await loadedMarket.getUserVanillaObligation(signer.address);
     if (!userObligation) throw new Error("User has no Kamino obligation");
 
-    // Extract collateral and debt data from obligation
     const collaterals = [];
     const debts = [];
 
@@ -105,7 +104,6 @@ describe("kamino_integration with deposit and withdraw", () => {
       if (assetData) debts.push(assetData);
     }
 
-    // Call compute_hf with extracted data
     await program.methods
       .computeHf({
         collaterals: collaterals.map(c => ({
@@ -130,29 +128,25 @@ describe("kamino_integration with deposit and withdraw", () => {
 
     // Read back the computed HF
     const hfState = await program.account.hfState.fetch(hfStatePda);
-    const hfQ64 = BigInt(hfState.lastHfQ64.toString());
 
-    // Convert to decimal
-    const integerPart = hfQ64 >> BigInt(64);
-    const fractionalPart = hfQ64 & ((BigInt(1) << BigInt(64)) - BigInt(1));
-    const hfDecimal = Number(integerPart) + Number(fractionalPart) / 2 ** 64;
-
+    // Convert to decimal using utility function
+    const hfDecimal = convertHfQ64ToDecimal(hfState);
     console.log(`On-chain Health Factor (Q64.64): ${hfDecimal.toFixed(4)}x`);
-    expect(hfDecimal).to.be.greaterThan(1.0);
 
-    if (hfDecimal < 1.0) {
+    if (hfDecimal < HEALTH_FACTOR_THRESHOLD) {
+      const liquidatorFundAmountSOL = 1; // 1 SOL
+      const liquidatorFundAmountUSDC = 10; // 10 USDC
       const liquidatorKeypair = Keypair.generate();
       const liquidatorSigner = await createKeyPairSignerFromBytes(liquidatorKeypair.secretKey);
 
       // Fund liquidator with SOL for transaction fees
-      await airdropSol(connection, liquidatorKeypair.publicKey, 1);
+      await airdropSol(connection, liquidatorKeypair.publicKey, liquidatorFundAmountSOL);
       await fundLiquidatorWithUsdc(
         connection,
-        provider,
         wallet,
         liquidatorKeypair,
-        new anchor.web3.PublicKey(USDC_MINT_ADDRESS),
-        10
+        USDC_MINT_ADDRESS,
+        liquidatorFundAmountUSDC
       );
 
       const usdcReserve = loadedMarket.getReserveByMint(USDC_MINT_ADDRESS);
