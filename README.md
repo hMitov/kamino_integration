@@ -62,11 +62,11 @@ yarn install
 # 2. Sync Anchor keys - there is a possibility of missmatch between program id in the lib.rs and Anchor.toml. This command will fix it.
 anchor keys sync
 
-# 3. Start Surfpool with watch mode
-surfpool start --watch
-
-# 4. Build the program
+# 3. Build the program
 anchor build
+
+# 4. Start Surfpool with watch mode
+surfpool start --watch
 
 # 5. Run tests
 anchor test
