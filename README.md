@@ -1,10 +1,9 @@
 # Kamino Finance Integration
 
-A Solana Anchor program that integrates with Kamino Finance for lending operations, featuring flash-assist deposits, health factor computation, and automated liquidation capabilities.
+A Solana Anchor program that integrates with Kamino Finance for lending operations, health factor computation, and automated liquidation capabilities.
 
 ## Features
 
-- **Flash-Assist Deposits**: Automatically borrow missing SOL via flash loans to complete deposits
 - **Health Factor Computation**: Real-time calculation of user position health using Q64.64 fixed-point arithmetic
 - **Automated Liquidation**: Liquidate undercollateralized positions when health factor drops below threshold
 - **Kamino SDK Integration**: Full integration with Kamino Finance lending markets
@@ -160,16 +159,6 @@ if borrow_factor_bps > 0 {
 }
 ```
 
-## Flash Loan Integration
-
-### Flash-Assist Deposit Flow
-
-1. **Balance Check**: Compare wallet balance vs target deposit
-2. **Shortfall Calculation**: Compute missing amount
-3. **Flash Loan**: Borrow shortfall from Kamino
-4. **Deposit**: Deposit full target amount (wallet + borrowed)
-5. **Repay**: Repay flash loan + fee atomically
-
 ## Testing
 
 ### Running Tests
@@ -184,10 +173,9 @@ anchor test -- --grep "computes HF using live Kamino account"
 ### Test Scenarios
 
 1. **Normal Deposit**: Sufficient wallet balance
-2. **Flash-Assist Deposit**: Insufficient balance, requires flash loan
-3. **Health Factor Computation**: Real-time HF calculation with live market data
-4. **Liquidation**: Auto-liquidation when HF < 1.0
-5. **Market Conditions**: Test with real price volatility and reserve states
+2. **Health Factor Computation**: Real-time HF calculation with live market data
+3. **Liquidation**: Auto-liquidation when HF < 1.0
+4. **Market Conditions**: Test with real price volatility and reserve states
 
 ## Key Utilities
 
@@ -203,7 +191,6 @@ anchor test -- --grep "computes HF using live Kamino account"
 - **`executeKaminoDeposit`**: Standard deposit operations
 - **`executeKaminoBorrow`**: Borrow operations
 - **`executeKaminoLiquidation`**: Liquidation operations
-- **`executeKaminoFlashAssistDeposit`**: Flash-assist deposit operations
 
 ## Configuration
 
@@ -243,7 +230,6 @@ The integration includes comprehensive error handling:
 - `KaminoAction.buildDepositTxns`: Build deposit transactions
 - `KaminoAction.buildBorrowTxns`: Build borrow transactions
 - `KaminoAction.buildLiquidateTxns`: Build liquidation transactions
-- `getFlashLoanInstructions`: Build flash loan instructions
 
 ## Contributing
 
