@@ -52,46 +52,27 @@ npm install
 anchor build
 ```
 
-### Troubleshooting Dependency Issues
+### How to run and test the program
 
-If you encounter borsh version conflicts or edition2024 errors:
-
+#### Complete Setup and Test Workflow
 ```bash
-# Clean cargo cache
-cargo clean
+# 1. Install dependencies
+yarn install
 
-# Update Rust toolchain (if needed)
-rustup update
+# 2. Sync Anchor keys - there is a possibility of missmatch between program id in the lib.rs and Anchor.toml. This command will fix it.
+anchor keys sync
 
-# Rebuild with pinned dependencies
-anchor build
-```
-
-The project includes pinned dependencies to ensure compatibility:
-- `borsh = "=0.10.3"` - Compatible with Anchor
-- `rust-toolchain.toml` - Specifies Rust version
-
-### Surfpool Workflow
-#### 1. Start a Surfnet
-```bash
-# Start a local validator with mainnet fork
-surfpool start
-
-# Start with auto-redeploy on code changes
+# 3. Start Surfpool with watch mode
 surfpool start --watch
-```
 
-#### 2. Deploy the Program
-```bash
-# Deploy using runbooks
-surfpool run deployment
-
-# Or deploy manually
+# 4. Build the program
 anchor build
-anchor deploy
+
+# 5. Run tests
+anchor test
 ```
 
-#### 3. Run Tests
+#### Run Specific Tests
 ```bash
 # Run tests on Surfnet
 anchor test
